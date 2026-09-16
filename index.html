@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Smart Crop Irrigation Dashboard</title>
+<style>
+  body {
+    font-family: 'Segoe UI', sans-serif;
+    background: linear-gradient(135deg, #1b5e20, #4caf50);
+    margin: 0;
+    padding: 20px;
+    color: #fff;
+  }
+  h1 {
+    text-align: center;
+    margin-bottom: 5px;
+  }
+  p.subtitle {
+    text-align: center;
+    opacity: 0.85;
+    margin-top: 0;
+  }
+  .dashboard {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+    justify-content: center;
+    margin-top: 30px;
+  }
+  .card {
+    background: rgba(255,255,255,0.15);
+    border-radius: 16px;
+    padding: 20px 30px;
+    text-align: center;
+    min-width: 160px;
+    backdrop-filter: blur(4px);
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+  }
+  .card h2 {
+    margin: 0;
+    font-size: 16px;
+    opacity: 0.9;
+  }
+  .card .value {
+    font-size: 32px;
+    font-weight: bold;
+    margin-top: 10px;
+  }
+  .status {
+    text-align: center;
+    margin-top: 30px;
+    padding: 15px;
+    border-radius: 12px;
+    font-size: 20px;
+    font-weight: bold;
+    max-width: 500px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .ok { background: #2e7d32; }
+  .alert { background: #c62828; animation: blink 1s infinite; }
+  @keyframes blink { 50% { opacity: 0.5; } }
+  .pump {
+    text-align: center;
+    margin-top: 20px;
+    font-size: 18px;
+  }
+  .pump-indicator {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    margin-right: 8px;
+    vertical-align: middle;
+  }
+  .on { background: #00e676; box-shadow: 0 0 12px #00e676; }
+  .off { background: #757575; }
+  button {
+    display: block;
+    margin: 25px auto 0;
+    padding: 10px 25px;
+    font-size: 16px;
+    border: none;
+    border-radius: 8px;
+    background: #ffeb3b;
+    color: #1b5e20;
+    font-weight: bold;
+    cursor: pointer;
+  }
+  button:hover { background: #fdd835; }
+  .chart-container {
+    max-width: 700px;
+    margin: 35px auto 0;
+    background: rgba(255,255,255,0.15);
+    border-radius: 16px;
+    padding: 20px;
+  }
+  .chart-container h2 {
+    text-align: center;
+    font-size: 18px;
+    margin-top: 0;
+  }
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+</head>
+<body>
+
+<h1>🌱 Smart Crop Irrigation Monitoring Dashboard</h1>
+<p class="subtitle">Simulated real-time sensor data for automated farm irrigation</p>
+
+<div class="dashboard">
+  <div class="card">
+    <h2>Soil Moisture</h2>
+    <div class="value" id="moisture">--%</div>
+  </div>
+  <div class="card">
+    <h2>Temperature</h2>
+    <div class="value" id="temperature">--°C</div>
+  </div>
+  <div class="card">
+    <h2>Humidity</h2>
+    <div class="value" id="humidity">--%</div>
+  </div>
+</div>
+
+<div class="status ok" id="statusBox">System OK — Crop moisture is sufficient</div>
+
+<div class="pump">
+  <span class="pump-indicator off" id="pumpIndicator"></span>
+  <span id="pumpText">Pump: OFF</span>
+</div>
+
+<button onclick="simulateReading()">🔄 Refresh Sensor Reading</button>
+
+<div class="chart-container">
+  <h2>📈 Soil Moisture Trend</h2>
+  <canvas id="moistureChart" height="120"></canvas>
+</div>
+
+<script>
+  const MOISTURE_THRESHOLD = 35; // below this % triggers irrigation
+
+  // ===== PUT YOUR DETAILS HERE =====
+  const API_KEY = "70ff53fb64ddb2758c7058bc2c94e812";
+  const CITY = "Belagavi";
+  // ==================================
+
+  async function getWeather() {
+    const url = `https://api.openweathermap.org/data/2.5/weather?q=${CITY}&appid=${API_KEY}&units=metric`;
+    const response = await fetch(url);
+    const data = await response.json();
+    return {
+      temperature: Math.round(data.main.temp),
+      humidity: data.main.humidity
+    };
+  }
+
+  // ===== Moisture trend chart setup =====
+  const chartLabels = [];
+  const chartData = [];
+  const ctx = document.getElementById('moistureChart').getContext('2d');
+  const moistureChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: chartLabels,
+      datasets: [{
+        label: 'Soil Moisture (%)',
+        data: chartData,
+        borderColor: '#ffeb3b',
+        backgroundColor: 'rgba(255,235,59,0.2)',
+        tension: 0.3,
+        fill: true,
+        pointRadius: 4
+      }]
+    },
+    options: {
+      responsive: true,
+      scales: {
+        y: { min: 0, max: 100, ticks: { color: '#fff' } },
+        x: { ticks: { color: '#fff' } }
+      },
+      plugins: { legend: { labels: { color: '#fff' } } }
+    }
+  });
+
+  function updateChart(moisture) {
+    const now = new Date();
+    const label = now.getHours().toString().padStart(2,'0') + ':' +
+                  now.getMinutes().toString().padStart(2,'0') + ':' +
+                  now.getSeconds().toString().padStart(2,'0');
+    chartLabels.push(label);
+    chartData.push(moisture);
+    if (chartLabels.length > 10) { // keep last 10 readings only
+      chartLabels.shift();
+      chartData.shift();
+    }
+    moistureChart.update();
+  }
+
+  async function simulateReading() {
+    // Soil moisture stays simulated (no physical sensor connected yet)
+    const moisture = Math.floor(Math.random() * 60) + 10;   // 10-70%
+    updateChart(moisture);
+
+    let temperature, humidity;
+    try {
+      const weather = await getWeather();
+      temperature = weather.temperature;
+      humidity = weather.humidity;
+    } catch (err) {
+      // Fallback to simulated values if API fails (e.g. key not active yet)
+      temperature = Math.floor(Math.random() * 15) + 20;
+      humidity = Math.floor(Math.random() * 40) + 40;
+    }
+
+    document.getElementById('moisture').innerText = moisture + '%';
+    document.getElementById('temperature').innerText = temperature + '°C';
+    document.getElementById('humidity').innerText = humidity + '%';
+
+    const statusBox = document.getElementById('statusBox');
+    const pumpIndicator = document.getElementById('pumpIndicator');
+    const pumpText = document.getElementById('pumpText');
+
+    if (moisture < MOISTURE_THRESHOLD) {
+      statusBox.className = 'status alert';
+      statusBox.innerText = '⚠ Low Soil Moisture! Irrigation needed.';
+      pumpIndicator.className = 'pump-indicator on';
+      pumpText.innerText = 'Pump: ON — Watering crop';
+    } else {
+      statusBox.className = 'status ok';
+      statusBox.innerText = '✅ System OK — Crop moisture is sufficient';
+      pumpIndicator.className = 'pump-indicator off';
+      pumpText.innerText = 'Pump: OFF';
+    }
+  }
+
+  // Load first reading automatically
+  simulateReading();
+
+  // Auto-refresh every 5 seconds (simulating live sensor feed)
+  setInterval(simulateReading, 5000);
+</script>
+
+</body>
+</html>
